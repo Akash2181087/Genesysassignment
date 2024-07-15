@@ -1,68 +1,90 @@
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
-import org.apache.hc.core5.http.*;
-import org.apache.hc.client5.http.classic.*;
-import org.apache.hc.client5.http.entity.*;
-import java.io.IOException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.restassured.RestAssured;
+import io.restassured.http.ContentType;
+import io.restassured.response.Response;
+import io.restassured.specification.RequestSpecification;
+import org.junit.jupiter.api.*;
 
+import static io.restassured.RestAssured.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class MessageApiTest {
-    private static final String BASE_URL = "http://localhost:3000"; // Adjust based on your API URL
-    private static CloseableHttpClient httpClient;
+
+    private static final String BASE_URL = "http://localhost:3000"; // Adjust as per your local setup
+    private static String messageId; // To store the ID of a message created during testing
+
+    private ObjectMapper objectMapper;
 
     @BeforeAll
-    public static void setUp() {
-        httpClient = HttpClients.createDefault();
+    public void setup() {
+        RestAssured.baseURI = BASE_URL;
+        objectMapper = new ObjectMapper();
     }
 
     @Test
-    public void testCreateMessage() throws IOException {
-        String requestBody = "{ \"from\": { \"id\": \"uuid-of-sender\" }, \"to\": { \"id\": \"uuid-of-recipient\" }, \"message\": \"Test message content\", \"time\": \"2021-07-14T12:00:00Z\" }";
-        HttpPost request = new HttpPost(BASE_URL + "/message");
-        request.setHeader(HttpHeaders.CONTENT_TYPE, "application/json");
-        request.setEntity(new StringEntity(requestBody, ContentType.APPLICATION_JSON));
+    public void testCreateMessage() {
+        // Given
+        ObjectNode requestBody = objectMapper.createObjectNode();
+        requestBody.putObject("from").put("id", "fromUserId");
+        requestBody.putObject("to").put("id", "toUserId");
+        requestBody.put("message", "Test message content");
 
-        try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertEquals(HttpStatus.SC_CREATED, response.getCode());
-            // Optionally, parse JSON response body to get message ID and verify other properties
-        }
+        // When
+        Response response = given()
+                .contentType(ContentType.JSON)
+                .body(requestBody)
+                .post("/message");
+
+        // Then
+        assertEquals(201, response.getStatusCode(), "Expected status code 201 (Created)");
+        JsonNode responseBody = response.getBody().as(JsonNode.class);
+        assertNotNull(responseBody.get("id").asText(), "Expected message ID to be not null");
+        messageId = responseBody.get("id").asText();
     }
 
     @Test
-    public void testRetrieveMessages() throws IOException {
-        String fromUserId = "uuid-of-sender";
-        String toUserId = "uuid-of-recipient";
-        HttpGet request = new HttpGet(BASE_URL + "/message?from=" + fromUserId + "&to=" + toUserId);
+    public void testGetMessageById() {
+        // When
+        Response response = get("/message/" + messageId);
 
-        try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertEquals(HttpStatus.SC_OK, response.getCode());
-            // Optionally, parse JSON response body to verify retrieved messages
-        }
+        // Then
+        assertEquals(200, response.getStatusCode(), "Expected status code 200 (OK)");
+        JsonNode responseBody = response.getBody().as(JsonNode.class);
+        assertEquals(messageId, responseBody.get("id").asText(), "Expected message ID to match");
     }
 
     @Test
-    public void testUpdateMessage() throws IOException {
-        String messageId = "uuid-of-message";
-        String updatedMessage = "{ \"message\": \"Updated message content\" }";
-        HttpPut request = new HttpPut(BASE_URL + "/message/" + messageId);
-        request.setHeader(HttpHeaders.CONTENT_TYPE, "application/json");
-        request.setEntity(new StringEntity(updatedMessage, ContentType.APPLICATION_JSON));
+    public void testUpdateMessage() {
+        // Given
+        ObjectNode requestBody = objectMapper.createObjectNode();
+        requestBody.put("message", "Updated message content");
 
-        try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertEquals(HttpStatus.SC_OK, response.getCode());
-            // Optionally, parse JSON response body to verify updated message content
-        }
+        // When
+        Response response = given()
+                .contentType(ContentType.JSON)
+                .body(requestBody)
+                .put("/message/" + messageId);
+
+        // Then
+        assertEquals(200, response.getStatusCode(), "Expected status code 200 (OK)");
+        JsonNode responseBody = response.getBody().as(JsonNode.class);
+        assertEquals("Updated message content", responseBody.get("message").asText(),
+                "Expected updated message content");
     }
 
     @Test
-    public void testDeleteMessage() throws IOException {
-        String messageId = "uuid-of-message";
-        HttpDelete request = new HttpDelete(BASE_URL + "/message/" + messageId);
+    public void testDeleteMessage() {
+        // When
+        Response response = delete("/message/" + messageId);
 
-        try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertEquals(HttpStatus.SC_NO_CONTENT, response.getCode());
-        }
-
-        // Verify message is deleted (e.g., make a GET request and expect 404)
+        // Then
+        assertEquals(204, response.getStatusCode(), "Expected status code 204 (No Content)");
     }
-}
+
+   }
+
+
+    
+  
